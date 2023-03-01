@@ -4,36 +4,57 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/evolidev/evoli/framework/filesystem"
-	"github.com/evolidev/evoli/framework/use"
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"syscall"
 )
 
 func (m *Manager) runner() {
+	var cmd *exec.Cmd
 
-	go m.build()
+	m.Logger.Debug("My PID: %d", os.Getpid())
 
+	//go m.build()
+
+	//go func() {
+	//	time.Sleep(10 * time.Millisecond)
+	//	m.Restart <- true
+	//}()
+
+Loop:
 	for {
-		<-m.Restart
-		m.Logger.Log("Restarting...")
+		select {
+		case <-m.Restart:
+			if cmd != nil {
+				m.Logger.Log("Restarting...")
+				// kill the previous command
+				pid := cmd.Process.Pid
+				m.Logger.Debug("Stopping: PID %d", pid)
 
-		pid := filesystem.Read(use.StoragePath("tmp/serve.pid"))
-		if pid != "" {
-			m.Logger.Log("Killing process with PID: %s", pid)
-			// convert pid to int
-			pidInt, _ := strconv.Atoi(pid)
-			syscall.Kill(pidInt, syscall.SIGTERM)
+				pgid, err := syscall.Getpgid(cmd.Process.Pid)
+				if err == nil {
+					err := syscall.Kill(-pgid, 15)
+					if err != nil {
+						m.Logger.Error("Failed to kill process: %s", err)
+						break Loop
+					} // note the minus sign
+				}
+			} else {
+				m.Logger.Debug("Starting for the first time...")
+			}
 
-		} else {
-			m.Logger.Print("No process running")
+			//cmd = m.build()
+			cmd = m.makeCmd()
+
+			go func() {
+				m.run(cmd)
+			}()
+
+		case <-m.context.Done():
+			break Loop
 		}
-
-		go m.build()
 	}
 }
 
@@ -86,7 +107,7 @@ func (m *Manager) runAndListen(cmd *exec.Cmd) error {
 		return fmt.Errorf("%s\n%s", err, stderr.String())
 	}
 
-	m.Logger.Success("Running: %s (PID: %d)", strings.Join(cmd.Args, " "), cmd.Process.Pid)
+	m.Logger.Debug("Running: %s (PID: %d)", strings.Join(cmd.Args, " "), cmd.Process.Pid)
 	err = cmd.Wait()
 	if err != nil {
 		return fmt.Errorf("%s\n%s", err, stderr.String())

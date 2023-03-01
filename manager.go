@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -50,6 +51,10 @@ func (m *Manager) Start() error {
 	w := NewWatcher(m)
 	w.Start()
 
+	go m.build(fsnotify.Event{Name: ":start:"})
+
+	//go m.build()
+
 	restart := func() {
 		m.Restart <- true
 	}
@@ -58,6 +63,7 @@ func (m *Manager) Start() error {
 
 	if !m.Debug {
 		go func() {
+		LoopRebuilder:
 			for {
 				select {
 				case event := <-w.Events():
@@ -77,11 +83,12 @@ func (m *Manager) Start() error {
 
 				case <-m.context.Done():
 					m.Logger.Print("Shutting down")
-					break
+					break LoopRebuilder
 				}
 			}
 		}()
 	}
+
 	go func() {
 		for {
 			select {
@@ -97,15 +104,59 @@ func (m *Manager) Start() error {
 	return nil
 }
 
-func (m *Manager) build() *exec.Cmd {
+func (m *Manager) makeCmd() *exec.Cmd {
 
-	timer := use.TimeRecord()
 	//m.Logger.Print("Rebuild on: %s", event.Name)
 
 	command, args := m.getCommandArguments()
 	cmd := exec.CommandContext(m.context, command, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
 	cmd.Dir = m.AppRoot
 
+	return cmd
+}
+
+func (r *Manager) build(event fsnotify.Event) {
+
+	time.Sleep(100 * time.Millisecond)
+	r.Restart <- true
+
+	//r.gil.Do(func() {
+	//	defer func() {
+	//		r.gil = &sync.Once{}
+	//	}()
+	//	// time.Sleep(r.BuildDelay * time.Millisecond)
+	//
+	//	//now := time.Now()
+	//	//r.Logger.Print("Rebuild on: %s", event.Name)
+	//
+	//	//args := []string{"build", "-v"}
+	//	//args = append(args, r.BuildFlags...)
+	//	//args = append(args, "-o", r.FullBuildPath(), r.BuildTargetPath)
+	//	//cmd := exec.CommandContext(r.context, "go", args...)
+	//	//cmd := r.makeCmd()
+	//	//
+	//	//err := r.runAndListen(cmd)
+	//	//if err != nil {
+	//	//	if strings.Contains(err.Error(), "no buildable Go source files") {
+	//	//		r.cancelFunc()
+	//	//		log.Fatal(err)
+	//	//	}
+	//	//	return
+	//	//}
+	//	//
+	//	//tt := time.Since(now)
+	//	//r.Logger.Success("Building Completed (PID: %d) (Time: %s)", cmd.Process.Pid, tt)
+	//	r.Restart <- true
+	//	return
+	//})
+}
+
+func (m *Manager) run(cmd *exec.Cmd) *exec.Cmd {
+
+	timer := use.TimeRecord()
 	err := m.runAndListen(cmd)
 	m.cmd = cmd
 	if err != nil {
@@ -120,6 +171,5 @@ func (m *Manager) build() *exec.Cmd {
 		cmd.Process.Pid,
 		timer.ElapsedColored(),
 	)
-
 	return cmd
 }
