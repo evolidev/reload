@@ -19,6 +19,7 @@ type Manager struct {
 	ID         string
 	Logger     *logging.Logger
 	Restart    chan bool
+	Kill       chan bool
 	cancelFunc context.CancelFunc
 	context    context.Context
 	gil        *sync.Once
@@ -40,6 +41,7 @@ func NewWithContext(c *Configuration, ctx context.Context) *Manager {
 			PrefixColor:  148,
 		}),
 		Restart:    make(chan bool),
+		Kill:       make(chan bool),
 		cancelFunc: cancelFunc,
 		context:    ctx,
 		gil:        &sync.Once{},
@@ -82,7 +84,7 @@ func (m *Manager) Start() error {
 					}
 
 				case <-m.context.Done():
-					m.Logger.Print("Shutting down")
+					m.Logger.Print("Shutting down from Start")
 					break LoopRebuilder
 				}
 			}
@@ -104,6 +106,14 @@ func (m *Manager) Start() error {
 	return nil
 }
 
+func (m *Manager) Stop() {
+	m.Logger.Print("Stopping from Manager:Stop")
+	//m.Kill <- true
+	//m.cancelFunc()
+
+	time.Sleep(3 * time.Second)
+}
+
 func (m *Manager) makeCmd() *exec.Cmd {
 
 	//m.Logger.Print("Rebuild on: %s", event.Name)
@@ -118,10 +128,10 @@ func (m *Manager) makeCmd() *exec.Cmd {
 	return cmd
 }
 
-func (r *Manager) build(event fsnotify.Event) {
+func (m *Manager) build(event fsnotify.Event) {
 
 	time.Sleep(100 * time.Millisecond)
-	r.Restart <- true
+	m.Restart <- true
 
 	//r.gil.Do(func() {
 	//	defer func() {

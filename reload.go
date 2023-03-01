@@ -15,22 +15,22 @@ func Init() {
 var ErrConfigNotExist = errors.New("no config file was found")
 var debug = true
 
-func RunBackground(config *Configuration) error {
+func RunBackground(config *Configuration) (*Manager, error) {
 	r := NewWithContext(config, context.Background())
-	return r.Start()
+	return r, r.Start()
 }
 
-func Run(cfgFile string) error {
+func Run(cfgFile string) (*Manager, error) {
 	ctx := context.Background()
 	return RunWithContext(cfgFile, ctx)
 }
 
-func RunWithContext(cfgFile string, ctx context.Context) error {
+func RunWithContext(cfgFile string, ctx context.Context) (*Manager, error) {
 	c := &Configuration{}
 
 	if err := loadConfig(c, cfgFile); err != nil {
 		if err != ErrConfigNotExist {
-			return err
+			return nil, err
 		}
 
 		log.Println("No configuration loaded, proceeding with defaults")
@@ -45,7 +45,7 @@ func RunWithContext(cfgFile string, ctx context.Context) error {
 	}
 
 	r := NewWithContext(c, ctx)
-	return r.Start()
+	return r, r.Start()
 }
 
 func loadConfig(c *Configuration, path string) error {
